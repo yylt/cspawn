@@ -1,0 +1,26 @@
+# Worker config - Worker 工作进程配置
+# 配合 worker.service 使用
+
+runtime: local:///var/lib/cspawn
+image: python:3.11-slim
+
+# 环境变量
+env:
+  - PYTHONUNBUFFERED=1
+  - PYTHONDONTWRITEBYTECODE=1
+  - APP_ENV=production
+
+# 绑定挂载
+binds:
+  - /opt/worker/app:/app:ro
+  - /opt/worker/data:/data:rw
+  - /var/log/worker:/var/log/app:rw
+
+# 工作目录
+chdir: /app
+
+# 工作目录 (overlay)
+work_dir: /var/lib/cspawn/workdirs/worker
+
+# 调试模式
+debug: false

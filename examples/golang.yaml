@@ -1,0 +1,22 @@
+# Golang development environment - Go 开发环境示例
+# 使用方式: cspawn -f golang.yaml /bin/bash
+
+runtime: local:///var/lib/cspawn
+image: golang:1.25
+
+# 环境变量
+env:
+  - GOPATH=/go
+  - GOCACHE=/root/.cache/go-build
+  - GOPROXY=https://goproxy.cn,direct
+  - TERM=xterm
+
+# 工作目录
+chdir: /workspace
+
+# 绑定挂载
+binds:
+  - /home/user/projects:/workspace:rw
+
+# 用户 (1000:1000)
+user: "1000:1000"

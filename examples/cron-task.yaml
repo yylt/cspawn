@@ -1,0 +1,25 @@
+# Cron task config - 定时任务配置
+# 配合 cron-task.service 使用
+# Timer: systemd timer 或 crontab
+
+runtime: local:///var/lib/cspawn
+image: python:3.11-slim
+
+# 环境变量
+env:
+  - PYTHONUNBUFFERED=1
+  - TASK_NAME=daily-report
+
+# 绑定挂载
+binds:
+  - /opt/cron/app:/app:ro
+  - /opt/cron/data:/data:rw
+  - /var/log/cron:/var/log/app:rw
+
+# 工作目录
+chdir: /app
+
+# 工作目录 (overlay)
+work_dir: /var/lib/cspawn/workdirs/cron-task
+
+debug: false

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -20,13 +21,15 @@ type LocalRuntime struct {
 	DataDir   string
 	RootfsDir string
 	Image     string
+	WorkDir   string
 }
 
-func NewLocalRuntime(dataDir, rootfsDir, image string) *LocalRuntime {
+func NewLocalRuntime(dataDir, rootfsDir, image, workDir string) *LocalRuntime {
 	return &LocalRuntime{
 		DataDir:   dataDir,
 		RootfsDir: rootfsDir,
 		Image:     image,
+		WorkDir:   workDir,
 	}
 }
 
@@ -75,6 +78,40 @@ func (r *LocalRuntime) Prepare() (string, error) {
 	return rootfsDir, nil
 }
 
+func (r *LocalRuntime) PrepareOverlay() (string, error) {
+	if r.WorkDir != "" {
+		workDir := r.WorkDir
+		log.Info("Using custom work directory / 使用自定义工作目录: %s", workDir)
+		if err := os.MkdirAll(workDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create work directory: %w", err)
+		}
+		return workDir, nil
+	}
+
+	var overlayName string
+	if r.Image != "" {
+		rootfsName, err := utils.ImageToRootfsName(r.Image)
+		if err != nil {
+			return "", err
+		}
+		overlayName = rootfsName
+	} else if r.RootfsDir != "" {
+		overlayName = filepath.Base(r.RootfsDir)
+	} else {
+		overlayName = "default"
+	}
+
+	workDirsBase := filepath.Join(r.DataDir, "workdirs")
+	workDir := filepath.Join(workDirsBase, overlayName)
+	log.Info("Creating overlay work directory / 创建 overlay 工作目录: %s", workDir)
+
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create work directory: %w", err)
+	}
+
+	return workDir, nil
+}
+
 func (r *LocalRuntime) Cleanup() error {
 	return nil
 }
@@ -98,6 +135,11 @@ func (r *LocalRuntime) pullAndExtract(imageRef, rootfsDir, configFile string) er
 	}
 
 	log.Debug("Image config / 镜像配置: OS=%s Arch=%s", config.OS, config.Architecture)
+
+	localArch := runtime.GOARCH
+	if config.Architecture != localArch {
+		return fmt.Errorf("image architecture mismatch / 镜像架构不匹配: image=%s, local=%s", config.Architecture, localArch)
+	}
 
 	configData, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {

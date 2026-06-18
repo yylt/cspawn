@@ -1,0 +1,23 @@
+# Containerd runtime example - 使用 containerd 运行时示例
+# 需要 containerd 服务运行
+# 使用方式: cspawn -f containerd.yaml /bin/bash
+
+runtime: containerd://unix:///run/containerd/containerd.sock
+image: docker.io/library/ubuntu:22.04
+
+# 环境变量
+env:
+  - TERM=xterm
+  - DEBIAN_FRONTEND=noninteractive
+
+# 绑定挂载
+binds:
+  - /tmp:/tmp:rw
+
+# 用户
+user: "1000:1000"
+
+# 工作目录
+chdir: /home/user
+
+debug: false

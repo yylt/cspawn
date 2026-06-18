@@ -1,0 +1,26 @@
+# Application service - 应用服务示例
+# 安装: cp app.service /etc/systemd/system/
+# 启用: systemctl enable app
+# 启动: systemctl start app
+
+[Unit]
+Description=My Application in cspawn
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cspawn -f /etc/cspawn/app.yaml /usr/bin/myapp --port 8080
+Restart=on-failure
+RestartSec=5
+
+# 资源限制
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# 安全设置
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

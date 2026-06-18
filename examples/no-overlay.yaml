@@ -1,0 +1,14 @@
+# No overlay example - 不使用 overlay 示例
+# 直接使用 rootfs，不创建可写层
+# 适用于需要直接修改 rootfs 内容的场景
+
+runtime: local:///var/lib/cspawn
+image: alpine:3.18
+
+# 禁用 overlay
+no_overlay: true
+
+env:
+  - TERM=xterm
+
+chdir: /root

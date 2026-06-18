@@ -1,0 +1,16 @@
+# Cron service example - 定时任务示例
+
+[Unit]
+Description=Scheduled Task in cspawn
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cspawn -f /etc/cspawn/cron-task.yaml /usr/bin/python3 /app/cron.py
+TimeoutStartSec=3600
+
+# 资源限制
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

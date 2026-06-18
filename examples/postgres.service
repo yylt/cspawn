@@ -1,0 +1,20 @@
+# Database service example - 数据库服务示例
+
+[Unit]
+Description=PostgreSQL in cspawn
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/bin/cspawn -f /etc/cspawn/postgres.yaml /usr/lib/postgresql/15/bin/pg_ctl start -D /var/lib/postgresql/data -l /var/log/postgresql/postgresql.log
+ExecStop=/usr/local/bin/cspawn -f /etc/cspawn/postgres.yaml /usr/lib/postgresql/15/bin/pg_ctl stop -D /var/lib/postgresql/data -s -m fast
+ExecReload=/usr/local/bin/cspawn -f /etc/cspawn/postgres.yaml /usr/lib/postgresql/15/bin/pg_ctl reload -D /var/lib/postgresql/data
+Restart=on-failure
+RestartSec=10
+
+# 资源限制
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

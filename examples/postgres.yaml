@@ -1,0 +1,26 @@
+# PostgreSQL config - PostgreSQL 数据库配置
+# 配合 postgres.service 使用
+
+runtime: local:///var/lib/cspawn
+image: postgres:15-alpine
+
+# 环境变量
+env:
+  - POSTGRES_USER=admin
+  - POSTGRES_PASSWORD=secret
+  - POSTGRES_DB=mydb
+  - PGDATA=/var/lib/postgresql/data
+  - TERM=xterm
+
+# 绑定挂载
+binds:
+  - /var/lib/postgresql/data:/var/lib/postgresql/data:rw
+  - /var/log/postgresql:/var/log/postgresql:rw
+
+# 用户 (postgres uid=70)
+user: "70:70"
+
+# 工作目录
+work_dir: /var/lib/cspawn/workdirs/postgres
+
+debug: false

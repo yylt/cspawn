@@ -7,6 +7,8 @@
 ## 特性
 
 - **多种 rootfs 准备方式**：支持本地目录和 containerd 镜像
+- **Overlay 文件系统**：支持只读 rootfs + 可写层，保护原始镜像
+- **YAML 配置文件**：支持配置文件，命令行参数优先级更高
 - **设备支持**：自动准备 `/dev`、`/proc`、`/sys` 等常用设备文件系统
 - **文件系统挂载**：自动挂载 /proc、/sys、/dev 等必要的文件系统
 - **绑定挂载**：支持将宿主机目录绑定到容器内
@@ -19,16 +21,17 @@
 
 - **数据根目录**：`/var/lib/cspawn/`
 - **rootfs 存储**：`/var/lib/cspawn/rootfs/`
-- **容器配置**：`/var/lib/cspawn/config/`
+- **overlay 工作目录**：`/var/lib/cspawn/workdirs/`
+- **配置文件**：`/etc/cspawn/config.yaml`
 
 ## 安装
 
 ```bash
 # 构建
-go build -o cspawn ./cmd/cspawn
+make build
 
 # 安装
-sudo cp cspawn /usr/local/bin/
+sudo cp _out/linux/amd64/cspawn /usr/local/bin/
 ```
 
 ## 命令选项
@@ -37,123 +40,256 @@ sudo cp cspawn /usr/local/bin/
 
 | 选项 | 简写 | 类型 | 描述 |
 |------|------|------|------|
-| `--runtime` | `-r` | string | 运行时类型：`local(默认)` 或 `containerd` |
-| `--rootfs-dir` | `-d` | string | 本地 rootfs 目录路径, 必须已存在且包含完整的文件系统结构（与 `-i` 互斥） |
-| `--image` | `-i` | string | 容器镜像名称（与 `-d` 互斥） |
-| `--env-file` | `-E` | string | 环境变量文件路径 |
-| `--env` | `-e` | string | 设置环境变量（可多次指定，格式：`KEY=VALUE`） |
-| `--user` | `-u` | string | 运行用户（格式：`user:group`） |
+| `--config` | `-f` | string | 配置文件路径 (默认: `/etc/cspawn/config.yaml`) |
+| `--runtime` | `-r` | string | 运行时类型：`local://path` (默认: `local:///var/lib/cspawn`) 或 `containerd://socket` |
+| `--dir` | `-d` | string | 本地 rootfs 目录路径 (与 `-i` 互斥) |
+| `--image` | `-i` | string | 容器镜像 (名称:标签 或 名称@sha256:摘要) (与 `-d` 互斥) |
+| `--workdir` | `-w` | string | Overlay 工作目录 (默认: `workdirs/<名称>`) |
+| `--no-overlay` | - | bool | 禁用 overlay 文件系统 |
+| `--env` | `-e` | string | 环境变量 (可多次指定，格式：`KEY=VALUE`) |
+| `--envfile` | `-E` | string | 环境变量文件路径 |
+| `--user` | `-u` | string | 运行用户 (格式：`uid:gid`) |
 | `--chdir` | `-c` | string | 容器内工作目录 |
-| `--bind` | `-b` | string | 绑定挂载（格式：`host-dir:container-dir[:options]`） |
+| `--bind` | `-b` | string | 绑定挂载 (格式：`host:container[:ro\|rw]`) |
 
 ### 命令参数
 
 - `cmd [args...]`：在容器内执行的命令及其参数
 
-## 使用示例
+## YAML 配置文件
 
-### 1. 使用本地 rootfs
+配置文件默认路径：`/etc/cspawn/config.yaml`，可通过 `-f` 指定其他路径。
 
-```bash
-# 准备本地 rootfs
-mkdir -p /var/lib/cspawn/rootfs/ubuntu
-# 解压 Ubuntu rootfs 到该目录...
+**优先级**：命令行参数 > 配置文件 > 默认值
 
-# 启动容器
-cspawn -r local -d /var/lib/cspawn/rootfs/ubuntu /bin/bash
-```
+### 配置文件格式
 
-### 2. 使用 containerd 镜像
+```yaml
+# 运行时配置
+runtime: local:///var/lib/cspawn
+# runtime: containerd://unix:///run/containerd/containerd.sock
 
-```bash
-# 从 containerd 拉取镜像并启动
-cspawn -r containerd -i docker.io/library/ubuntu:22.04 /bin/bash
-```
+# 镜像或 rootfs 目录 (二选一)
+image: debian:trixie-slim
+# rootfs_dir: /path/to/rootfs
 
-### 3. 设置环境变量
+# Overlay 工作目录
+work_dir: /var/lib/cspawn/workdirs/myapp
 
-```bash
-# 单个环境变量
-cspawn -r local -d /var/lib/cspawn/rootfs/ubuntu -e PATH=/usr/local/bin:/usr/bin -e HOME=/root /bin/bash
+# 禁用 overlay
+no_overlay: false
+
+# 环境变量
+env:
+  - TERM=xterm
+  - LANG=C.UTF-8
+  - GOPATH=/go
 
 # 环境变量文件
-echo "PATH=/usr/local/bin:/usr/bin" > /tmp/env.txt
-echo "HOME=/root" >> /tmp/env.txt
-cspawn -r local -d /var/lib/cspawn/rootfs/ubuntu -E /tmp/env.txt /bin/bash
+env_file: /path/to/envfile
+
+# 绑定挂载
+binds:
+  - /host/path:/container/path:rw
+  - /host/data:/data:ro
+
+# 运行用户 (uid:gid)
+user: "1000:1000"
+
+# 容器内工作目录
+chdir: /workspace
+
+# 调试模式
+debug: false
 ```
 
-### 4. 指定用户和工作目录
+## Overlay 文件系统
+
+默认启用 overlay 文件系统，将 rootfs 作为只读层，所有写入在独立的可写层进行。
+
+### 工作目录结构
+
+```
+/var/lib/cspawn/workdirs/<名称>/
+├── upper/    # 可写层
+├── work/     # overlay 工作目录
+└── merged/   # 合并后的挂载点
+```
+
+### 目录命名规则
+
+| 镜像格式 | 目录名 |
+|---------|--------|
+| `name:tag` | `name_tag` |
+| `name@sha256:digest` | `name_sha256-digest` (前12位) |
+| 自定义 rootfs | 使用目录名 |
+
+### 禁用 Overlay
+
+使用 `--no-overlay` 选项时，直接使用 rootfs，不创建可写层：
 
 ```bash
-cspawn -r local -d /var/lib/cspawn/rootfs/ubuntu -u 1000:1000 -c /home/user /bin/bash
+cspawn --no-overlay -i debian:trixie-slim /bin/bash
+```
+
+或在配置文件中：
+
+```yaml
+no_overlay: true
+```
+
+## 命名空间隔离
+
+| 命名空间 | 状态 | 说明 |
+|---------|------|------|
+| `CLONE_NEWNS` | ✅ | mount 隔离，独立文件系统视图 |
+| `CLONE_NEWUTS` | ✅ | hostname 隔离，不影响宿主 |
+| `CLONE_NEWPID` | ❌ | 进程隔离 (Go runtime 兼容性问题) |
+| `CLONE_NEWIPC` | ❌ | IPC 隔离 |
+
+## 使用示例
+
+### 1. 使用镜像启动
+
+```bash
+# 基本使用
+cspawn -i debian:trixie-slim /bin/bash
+
+# 指定环境变量
+cspawn -i golang:1.25 -e GOPATH=/go -e GOCACHE=/root/.cache/go-build /bin/bash
+
+# 使用自定义镜像仓库
+cspawn -i docker.yylt.gq/library/debian:trixie-slim /bin/bash
+```
+
+### 2. 使用配置文件
+
+```bash
+# 使用默认配置文件
+cspawn /bin/bash
+
+# 指定配置文件
+cspawn -f /path/to/config.yaml /bin/bash
+
+# 命令行覆盖配置文件
+cspawn -f /path/to/config.yaml -i ubuntu:22.04 /bin/bash
+```
+
+### 3. 使用本地 rootfs
+
+```bash
+cspawn -d /path/to/rootfs /bin/bash
+```
+
+### 4. 设置用户和工作目录
+
+```bash
+cspawn -i debian:trixie-slim -u 1000:1000 -c /home/user /bin/bash
 ```
 
 ### 5. 绑定挂载
 
 ```bash
-# 只读绑定
-cspawn -r local -d /var/lib/cspawn/rootfs/ubuntu -b /host/data:/container/data:ro /bin/bash
+# 读写绑定
+cspawn -i debian:trixie-slim -b /host/data:/container/data /bin/bash
 
-# 读写绑定（默认）
-cspawn -r local -d /var/lib/cspawn/rootfs/ubuntu -b /host/data:/container/data /bin/bash
+# 只读绑定
+cspawn -i debian:trixie-slim -b /host/config:/container/config:ro /bin/bash
 ```
 
-### 6. 完整示例
+### 6. 禁用 Overlay
+
+```bash
+cspawn --no-overlay -i alpine:3.18 /bin/bash
+```
+
+### 7. 完整示例
 
 ```bash
 cspawn \
-  -r local \
-  -d /var/lib/cspawn/rootfs/ubuntu \
-  -e TERM=xterm-256color \
-  -e LANG=en_US.UTF-8 \
+  -i golang:1.25 \
+  -e GOPATH=/go \
+  -e GOCACHE=/root/.cache/go-build \
+  -e GOPROXY=https://goproxy.cn,direct \
   -u 1000:1000 \
-  -c /app \
-  -b /tmp/build:/build \
+  -c /workspace \
+  -b /home/user/projects:/workspace:rw \
   -b /var/run/docker.sock:/var/run/docker.sock:ro \
   /bin/bash
 ```
 
+更多示例（包括不同场景的配置文件和 systemd service 文件）见 `examples/` 目录。
+
 ## systemd 服务集成
 
-创建 systemd service 文件 `/etc/systemd/system/cspawn-example.service`：
+### 基本服务文件
+
+创建 `/etc/systemd/system/myapp.service`：
 
 ```ini
 [Unit]
-Description=Example cspawn container
+Description=My Application in cspawn
 After=network.target
 
 [Service]
-Type=oneshot
-ExecStart=/usr/local/bin/cspawn \
-    -r containerd \
-    -i docker.io/library/ubuntu:22.04 \
-    -e TERM=linux \
-    -u root:root \
-    -c / \
-    /bin/bash -c "echo 'Container started' && sleep 5"
-RemainAfterExit=yes
+Type=simple
+ExecStart=/usr/local/bin/cspawn -f /etc/cspawn/myapp.yaml /usr/bin/myapp --port 8080
+Restart=on-failure
+RestartSec=5
+
+# 资源限制
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# 安全设置
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-启用并启动服务：
+### 配置文件 `/etc/cspawn/myapp.yaml`
+
+```yaml
+runtime: local:///var/lib/cspawn
+image: myapp:latest
+
+env:
+  - APP_ENV=production
+  - LOG_LEVEL=info
+
+binds:
+  - /var/lib/myapp/data:/data:rw
+  - /var/log/myapp:/var/log/app:rw
+
+user: "1000:1000"
+work_dir: /var/lib/cspawn/workdirs/myapp
+```
+
+### 启用服务
 
 ```bash
-systemctl enable cspawn-example.service
-systemctl start cspawn-example.service
+systemctl daemon-reload
+systemctl enable myapp
+systemctl start myapp
 ```
+
+更多示例见 `examples/` 目录。
 
 ## 运行时实现
 
 ### Local Runtime
 
 - 拉取镜像并解压到数据目录内的 rootfs
+- 支持 overlay 文件系统
+- 自动缓存已拉取的镜像
 
 ### Containerd Runtime
 
 - 使用 containerd API 拉取镜像
-- 自动提取镜像层到 `/var/lib/cspawn/rootfs/<image-hash>`
+- 自动提取镜像层到 `/var/lib/cspawn/rootfs/<image-name>`
 - 默认使用 containerd 命名空间 `default`
 
 ## rootfs 准备
@@ -178,18 +314,26 @@ systemctl start cspawn-example.service
 - `tmpfs` 挂载到 `/tmp`、`/run`
 - `devpts` 挂载到 `/dev/pts`
 
-### 3. 绑定挂载
+### 3. Overlay 层 (默认启用)
+
+- rootfs 作为只读层 (lower)
+- `workdirs/<名称>/upper` 作为可写层
+- 所有写入在可写层进行，不影响原始 rootfs
+
+### 4. 绑定挂载
 
 - 用户通过 `-b` 指定的所有绑定挂载
-- 挂载顺序：先设备文件系统，再绑定挂载
+- 挂载顺序：先设备文件系统，再 overlay，最后绑定挂载
 
 ## 隔离级别
 
 `cspawn` 提供以下隔离：
 
 - ✅ **文件系统隔离**：通过 `chroot`/`pivot_root`
-- ✅ **进程隔离**：通过独立的 PID 命名空间
+- ✅ **主机名隔离**：通过独立的 UTS 命名空间
+- ✅ **挂载隔离**：通过独立的 mount 命名空间
 - ✅ **用户隔离**：通过 `setuid`/`setgid` 切换用户
+- ✅ **Overlay 隔离**：只读 rootfs + 可写层
 - ❌ **网络隔离**：与宿主机共享网络栈
 - ❌ **存储隔离**：存储仅通过绑定挂载方式提供
 
@@ -200,12 +344,8 @@ systemctl start cspawn-example.service
 ## 依赖项
 
 - **containerd**：使用 containerd 运行时需要
-- **Linux 内核**：需要支持命名空间和 chroot 相关功能
-- **Go 1.21+**：构建依赖
-
-## 配置存储
-
-容器配置存储在 `/var/lib/cspawn/config/` 目录下，每个容器有一个 JSON 格式的配置备份。
+- **Linux 内核**：需要支持命名空间、chroot 和 overlay 文件系统
+- **Go 1.26+**：构建依赖
 
 ## 故障排查
 
@@ -215,12 +355,16 @@ systemctl start cspawn-example.service
 2. **rootfs 不存在**：检查 `-d` 指定的路径
 3. **containerd 连接失败**：确保 containerd 服务正在运行
 4. **设备挂载失败**：检查内核是否支持相关文件系统
+5. **overlay 挂载失败**：检查内核是否支持 overlay 文件系统
 
 ### 调试模式
 
 ```bash
 # 开启详细日志（通过环境变量）
-CSPAWN_DEBUG=1 cspawn -r local -d /var/lib/cspawn/rootfs/ubuntu /bin/bash
+CSPAWN_DEBUG=1 cspawn -i debian:trixie-slim /bin/bash
+
+# 或在配置文件中
+debug: true
 ```
 
 ## 许可证

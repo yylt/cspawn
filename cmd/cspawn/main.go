@@ -18,8 +18,8 @@ func main() {
 	}
 
 	if cfg.Debug {
-		fmt.Fprintf(os.Stderr, "Config: runtime=%s socket=%s datadir=%s rootfs=%s image=%s command=%v\n",
-			cfg.Runtime, cfg.Socket, cfg.DataDir, cfg.RootfsDir, cfg.Image, cfg.Command)
+		fmt.Fprintf(os.Stderr, "Config: runtime=%s socket=%s datadir=%s rootfs=%s image=%s workdir=%s command=%v\n",
+			cfg.Runtime, cfg.Socket, cfg.DataDir, cfg.RootfsDir, cfg.Image, cfg.WorkDir, cfg.Command)
 	}
 
 	rt, err := runtime.New(cfg)
@@ -36,6 +36,17 @@ func main() {
 
 	id := utils.GenerateID()
 
+	var overlayDir string
+	if !cfg.NoOverlay {
+		if localRt, ok := rt.(*runtime.LocalRuntime); ok {
+			overlayDir, err = localRt.PrepareOverlay()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error preparing overlay: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}
+
 	c := container.New(
 		id,
 		rootfs,
@@ -44,6 +55,7 @@ func main() {
 		cfg.User,
 		cfg.Chdir,
 		cfg.Binds,
+		overlayDir,
 	)
 
 	if err := c.Run(); err != nil {

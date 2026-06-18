@@ -13,24 +13,26 @@ import (
 )
 
 type Container struct {
-	ID       string
-	RootFS   string
-	Command  []string
-	Env      []string
-	User     string
-	WorkDir  string
-	Binds    []string
+	ID         string
+	RootFS     string
+	Command    []string
+	Env        []string
+	User       string
+	WorkDir    string
+	Binds      []string
+	OverlayDir string
 }
 
-func New(id, rootfs string, command, env []string, user, workdir string, binds []string) *Container {
+func New(id, rootfs string, command, env []string, user, workdir string, binds []string, overlayDir string) *Container {
 	return &Container{
-		ID:      id,
-		RootFS:  rootfs,
-		Command: command,
-		Env:     env,
-		User:    user,
-		WorkDir: workdir,
-		Binds:   binds,
+		ID:         id,
+		RootFS:     rootfs,
+		Command:    command,
+		Env:        env,
+		User:       user,
+		WorkDir:    workdir,
+		Binds:      binds,
+		OverlayDir: overlayDir,
 	}
 }
 
@@ -51,20 +53,48 @@ func (c *Container) Run() error {
 	if len(c.Env) > 0 {
 		log.Debug("Env / 环境变量: %v", c.Env)
 	}
+	if c.OverlayDir != "" {
+		log.Debug("Overlay directory / overlay 目录: %s", c.OverlayDir)
+	}
 
-	log.Debug("Unsharing mount namespace / 分离挂载命名空间")
-	if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
-		return fmt.Errorf("failed to unshare mount namespace: %w", err)
+	var overlayAlreadyMounted bool
+	if c.OverlayDir != "" {
+		mergedDir := filepath.Join(c.OverlayDir, "merged")
+		overlayAlreadyMounted = isOverlayMounted(mergedDir)
+		if overlayAlreadyMounted {
+			log.Info("Overlay already mounted / overlay 已挂载: %s", mergedDir)
+			c.RootFS = mergedDir
+		}
+	}
+
+	log.Debug("Unsharing namespaces / 分离命名空间 (mount, uts)")
+	if err := syscall.Unshare(syscall.CLONE_NEWNS | syscall.CLONE_NEWUTS); err != nil {
+		return fmt.Errorf("failed to unshare namespace: %w", err)
 	}
 
 	if err := syscall.Mount("", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, ""); err != nil {
-		log.Debug("Failed to make / private, trying bind mount / 使 / 私有失败，尝试绑定挂载")
+		log.Debug("Failed to make / private / 设置 / 私有失败: %v", err)
 	}
 
-	if err := SetupRootfs(c.RootFS); err != nil {
-		return fmt.Errorf("failed to setup rootfs: %w", err)
+	if c.OverlayDir != "" {
+		mergedDir := filepath.Join(c.OverlayDir, "merged")
+		if err := syscall.Mount("", mergedDir, "", syscall.MS_REC|syscall.MS_PRIVATE, ""); err != nil {
+			log.Debug("Failed to make merged private / 设置 merged 私有失败: %v", err)
+		}
 	}
-	defer func() { _ = CleanupMounts(c.RootFS) }()
+
+	if c.OverlayDir != "" {
+		if !overlayAlreadyMounted {
+			if err := c.setupOverlay(); err != nil {
+				return fmt.Errorf("failed to setup overlay: %w", err)
+			}
+		}
+	} else {
+		if err := SetupRootfs(c.RootFS); err != nil {
+			return fmt.Errorf("failed to setup rootfs: %w", err)
+		}
+		defer func() { _ = CleanupMounts(c.RootFS) }()
+	}
 
 	if len(c.Binds) > 0 {
 		log.Info("Applying bind mounts / 应用绑定挂载")
@@ -105,11 +135,92 @@ func (c *Container) Run() error {
 	env := c.getEnv()
 
 	log.ContainerExec(c.Command)
-	if err := syscall.Exec(binary, c.Command, env); err != nil {
+
+	cmd := exec.Command(binary, c.Command[1:]...)
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
 		return fmt.Errorf("failed to exec: %w", err)
 	}
 
 	return nil
+}
+
+func (c *Container) setupOverlay() error {
+	log.Info("Setting up overlay mode / 设置 overlay 模式")
+
+	upperDir := filepath.Join(c.OverlayDir, "upper")
+	workDir := filepath.Join(c.OverlayDir, "work")
+	mergedDir := filepath.Join(c.OverlayDir, "merged")
+
+	if err := SetupOverlayRootfs(c.RootFS, upperDir, workDir, mergedDir); err != nil {
+		return err
+	}
+
+	if c.User != "" {
+		if err := c.setOverlayOwnership(upperDir, workDir); err != nil {
+			return fmt.Errorf("failed to set overlay ownership: %w", err)
+		}
+	}
+
+	c.RootFS = mergedDir
+	return nil
+}
+
+func (c *Container) setOverlayOwnership(dirs ...string) error {
+	uid, gid, err := c.parseUser()
+	if err != nil {
+		return err
+	}
+
+	for _, dir := range dirs {
+		log.Debug("Setting ownership of %s to %d:%d", dir, uid, gid)
+		if err := os.Chown(dir, uid, gid); err != nil {
+			return fmt.Errorf("failed to chown %s: %w", dir, err)
+		}
+
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			return os.Chown(path, uid, gid)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to walk and chown %s: %w", dir, err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Container) parseUser() (int, int, error) {
+	if c.User == "" {
+		return 0, 0, nil
+	}
+
+	parts := strings.SplitN(c.User, ":", 2)
+	uidStr := parts[0]
+
+	uid, err := strconv.Atoi(uidStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid uid: %s", uidStr)
+	}
+
+	gid := uid
+	if len(parts) == 2 {
+		gid, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid gid: %s", parts[1])
+		}
+	}
+
+	return uid, gid, nil
 }
 
 func (c *Container) pivotRoot() error {
@@ -193,10 +304,6 @@ func (c *Container) setUser() error {
 }
 
 func (c *Container) getEnv() []string {
-	if len(c.Env) > 0 {
-		return c.Env
-	}
-
 	defaultEnv := []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"HOME=/root",
@@ -204,5 +311,21 @@ func (c *Container) getEnv() []string {
 		"HOSTNAME=cspawn",
 	}
 
-	return defaultEnv
+	if len(c.Env) == 0 {
+		return defaultEnv
+	}
+
+	hasPATH := false
+	for _, e := range c.Env {
+		if strings.HasPrefix(e, "PATH=") {
+			hasPATH = true
+			break
+		}
+	}
+
+	if !hasPATH {
+		return append(defaultEnv[:1], c.Env...)
+	}
+
+	return c.Env
 }

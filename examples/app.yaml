@@ -1,0 +1,25 @@
+# Application config - 应用配置
+# 配合 app.service 使用
+
+runtime: local:///var/lib/cspawn
+image: myapp:latest
+
+# 环境变量
+env:
+  - APP_ENV=production
+  - LOG_LEVEL=info
+  - TERM=xterm
+
+# 绑定挂载
+binds:
+  - /var/lib/myapp/data:/data:rw
+  - /var/log/myapp:/var/log/app:rw
+
+# 用户
+user: "1000:1000"
+
+# 工作目录 (overlay)
+work_dir: /var/lib/cspawn/workdirs/myapp
+
+# 调试模式
+debug: false

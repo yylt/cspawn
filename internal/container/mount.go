@@ -217,3 +217,68 @@ func CleanupMounts(rootfs string) error {
 
 	return nil
 }
+
+func SetupOverlayRootfs(lower, upper, work, merged string) error {
+	log.Info("Setting up overlay rootfs / 设置 overlay rootfs")
+	log.Debug("Lower layer / 只读层: %s", lower)
+	log.Debug("Upper layer / 可写层: %s", upper)
+	log.Debug("Work directory / 工作目录: %s", work)
+	log.Debug("Merged directory / 合并目录: %s", merged)
+
+	if isOverlayMounted(merged) {
+		log.Info("Overlay already mounted, skipping / overlay 已挂载，跳过")
+		return nil
+	}
+
+	if err := os.MkdirAll(upper, 0755); err != nil {
+		return fmt.Errorf("failed to create upper directory: %w", err)
+	}
+
+	if err := os.MkdirAll(work, 0755); err != nil {
+		return fmt.Errorf("failed to create work directory: %w", err)
+	}
+
+	if err := os.MkdirAll(merged, 0755); err != nil {
+		return fmt.Errorf("failed to create merged directory: %w", err)
+	}
+
+	if err := syscall.Mount("", merged, "", syscall.MS_PRIVATE, ""); err != nil {
+		log.Debug("Failed to make merged private / 设置 merged 私有失败: %v", err)
+	}
+
+	data := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work)
+	if err := syscall.Mount("overlay", merged, "overlay", 0, data); err != nil {
+		return fmt.Errorf("failed to mount overlay: %w", err)
+	}
+
+	log.Info("Overlay rootfs setup complete / overlay rootfs 设置完成")
+	return nil
+}
+
+func isOverlayMounted(path string) bool {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 3 && fields[1] == path && fields[2] == "overlay" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func CleanupOverlayMounts(merged string) error {
+	log.Info("Cleaning up overlay mounts / 清理 overlay 挂载")
+	if err := syscall.Unmount(merged, syscall.MNT_DETACH); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to unmount overlay: %w", err)
+		}
+	}
+	return nil
+}

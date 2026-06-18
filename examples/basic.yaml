@@ -1,0 +1,16 @@
+# Basic example - 基本示例
+# 使用方式: cspawn -f basic.yaml /bin/bash
+
+runtime: local:///var/lib/cspawn
+image: debian:trixie-slim
+
+# 环境变量
+env:
+  - TERM=xterm
+  - LANG=C.UTF-8
+
+# 工作目录
+chdir: /root
+
+# 调试模式
+debug: false
