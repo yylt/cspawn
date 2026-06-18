@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run CI
+        run: make ci
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cspawn-linux-amd64
+          path: _out/linux/amd64/cspawn
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  cross-compile:
+    name: Cross Compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Cross compile for all platforms
+        run: make cross
+
+      - name: Upload all binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: cspawn-all-platforms
+          path: _out/**/cspawn
+
+  e2e-local:
+    name: E2E Local Runtime
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run E2E Local Tests
+        run: make e2e-local
+
+  e2e-user:
+    name: E2E User Switching
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run E2E User Tests
+        run: make e2e-user
+
+  e2e-combined:
+    name: E2E Combined Options
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run E2E Combined Tests
+        run: make e2e-combined
+
+  e2e-containerd:
+    name: E2E Containerd Runtime
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup containerd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y containerd
+          sudo systemctl start containerd
+
+      - name: Run E2E Containerd Tests
+        run: make e2e-containerd
