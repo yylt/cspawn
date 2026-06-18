@@ -5,7 +5,7 @@ LDFLAGS=-s -w
 E2E_IMAGE=ghcr.io/containerd/busybox:1.36
 E2E_ROOTFS=/tmp/cspawn-e2e-rootfs
 
-PLATFORMS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+PLATFORMS=linux/amd64 linux/arm64
 
 .PHONY: all build clean lint vuln test ci e2e e2e-local e2e-containerd e2e-user e2e-combined e2e-prepare-rootfs mod-download $(PLATFORMS)
 
