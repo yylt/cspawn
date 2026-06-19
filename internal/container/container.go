@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -209,14 +210,28 @@ func (c *Container) parseUser() (int, int, error) {
 
 	uid, err := strconv.Atoi(uidStr)
 	if err != nil {
-		return 0, 0, fmt.Errorf("invalid uid: %s", uidStr)
+		u, err := user.Lookup(uidStr)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid uid: %s", uidStr)
+		}
+		uid, err = strconv.Atoi(u.Uid)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid uid: %s", uidStr)
+		}
 	}
 
 	gid := uid
 	if len(parts) == 2 {
 		gid, err = strconv.Atoi(parts[1])
 		if err != nil {
-			return 0, 0, fmt.Errorf("invalid gid: %s", parts[1])
+			grp, err := user.LookupGroup(parts[1])
+			if err != nil {
+				return 0, 0, fmt.Errorf("invalid gid: %s", parts[1])
+			}
+			gid, err = strconv.Atoi(grp.Gid)
+			if err != nil {
+				return 0, 0, fmt.Errorf("invalid gid: %s", parts[1])
+			}
 		}
 	}
 

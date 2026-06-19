@@ -10,6 +10,12 @@ import (
 	"github.com/yylt/cspawn/pkg/utils"
 )
 
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
 func main() {
 	cfg, err := config.Parse()
 	if err != nil {
@@ -17,7 +23,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.Version {
+		fmt.Printf("cspawn %s (commit: %s, built: %s)\n", version, commit, buildDate)
+		os.Exit(0)
+	}
+
 	if cfg.Debug {
+		fmt.Fprintf(os.Stderr, "cspawn %s (commit: %s, built: %s)\n", version, commit, buildDate)
 		fmt.Fprintf(os.Stderr, "Config: runtime=%s socket=%s datadir=%s rootfs=%s image=%s workdir=%s command=%v\n",
 			cfg.Runtime, cfg.Socket, cfg.DataDir, cfg.RootfsDir, cfg.Image, cfg.WorkDir, cfg.Command)
 	}

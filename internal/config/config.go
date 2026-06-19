@@ -30,6 +30,7 @@ type Config struct {
 	Debug     bool     `yaml:"debug,omitempty"`
 	WorkDir   string   `yaml:"work_dir,omitempty"`
 	NoOverlay bool     `yaml:"no_overlay,omitempty"`
+	Version   bool     `yaml:"-"`
 }
 
 type stringSliceFlag struct {
@@ -62,6 +63,7 @@ func Parse() (*Config, error) {
 	flag.StringVar(&cfg.Chdir, "c", "", "")
 	flag.StringVar(&cfg.WorkDir, "w", "", "")
 	flag.BoolVar(&cfg.NoOverlay, "no-overlay", false, "")
+	flag.BoolVar(&cfg.Version, "v", false, "")
 
 	flag.Var(&stringSliceFlag{&cfg.Env}, "e", "")
 	flag.Var(&stringSliceFlag{&cfg.Binds}, "b", "")
@@ -184,6 +186,10 @@ func mergeConfig(fileCfg, cliCfg *Config) *Config {
 }
 
 func (c *Config) Validate() error {
+	if c.Version {
+		return nil
+	}
+
 	if len(c.Command) == 0 {
 		return fmt.Errorf("command required / 需要指定命令")
 	}
@@ -282,6 +288,7 @@ Options:
   -u, --user      Container run user (uid:gid) / 容器内运行用户
   -c, --chdir     Container working directory / 容器内工作目录
   -b, --bind      Bind mount (host:container[:ro|rw]) / 绑定挂载到容器内 (可多次指定)
+  -v, --version   Show version / 显示版本信息
   -h, --help      Show help / 显示帮助
 
 Config file format (YAML):

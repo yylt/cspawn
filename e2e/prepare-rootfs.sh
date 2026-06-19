@@ -33,15 +33,15 @@ echo "Pulling image using cspawn..."
 # Check if we need sudo
 if [ "$(id -u)" -eq 0 ]; then
     # Already root
-    "$CSPAWN_BIN" -r local -i "$IMAGE" /bin/true || true
+        "$CSPAWN_BIN" -r local://$DATA_DIR -i "$IMAGE" /bin/true || true
 else
     # Try sudo without password first
     if sudo -n true 2>/dev/null; then
-        sudo "$CSPAWN_BIN" -r local -i "$IMAGE" /bin/true || true
+        sudo "$CSPAWN_BIN" -r local://$DATA_DIR -i "$IMAGE" /bin/true || true
     else
         echo "Warning: sudo requires password. Please run as root or configure passwordless sudo."
         echo "Attempting to run without sudo (may fail)..."
-        "$CSPAWN_BIN" -r local -i "$IMAGE" /bin/true || true
+    "$CSPAWN_BIN" -r local://$DATA_DIR -i "$IMAGE" /bin/true || true
     fi
 fi
 
