@@ -1,0 +1,14 @@
+# Overlay example - 使用 overlay 示例
+# 启用 overlay 文件系统，将 rootfs 作为只读层，所有写入在独立的可写层进行
+# 适用于需要保护原始镜像内容的场景
+
+runtime: local:///var/lib/cspawn
+image: alpine:3.18
+
+# 启用 overlay
+overlay: true
+
+env:
+  - TERM=xterm
+
+chdir: /root

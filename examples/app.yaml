@@ -4,6 +4,9 @@
 runtime: local:///var/lib/cspawn
 image: myapp:latest
 
+# 启用 overlay 文件系统
+overlay: true
+
 # 环境变量
 env:
   - APP_ENV=production

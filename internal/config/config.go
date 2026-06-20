@@ -27,10 +27,10 @@ type Config struct {
 	Chdir     string   `yaml:"chdir,omitempty"`
 	Binds     []string `yaml:"binds,omitempty"`
 	Command   []string `yaml:"command,omitempty"`
-	Debug     bool     `yaml:"debug,omitempty"`
-	WorkDir   string   `yaml:"work_dir,omitempty"`
-	NoOverlay bool     `yaml:"no_overlay,omitempty"`
-	Version   bool     `yaml:"-"`
+	Debug   bool     `yaml:"debug,omitempty"`
+	WorkDir string   `yaml:"work_dir,omitempty"`
+	Overlay bool     `yaml:"overlay,omitempty"`
+	Version bool     `yaml:"-"`
 }
 
 type stringSliceFlag struct {
@@ -62,7 +62,7 @@ func Parse() (*Config, error) {
 	flag.StringVar(&cfg.User, "u", "", "")
 	flag.StringVar(&cfg.Chdir, "c", "", "")
 	flag.StringVar(&cfg.WorkDir, "w", "", "")
-	flag.BoolVar(&cfg.NoOverlay, "no-overlay", false, "")
+	flag.BoolVar(&cfg.Overlay, "overlay", false, "")
 	flag.BoolVar(&cfg.Version, "v", false, "")
 
 	flag.Var(&stringSliceFlag{&cfg.Env}, "e", "")
@@ -174,7 +174,7 @@ func mergeConfig(fileCfg, cliCfg *Config) *Config {
 	result.Env = append(fileCfg.Env, cliCfg.Env...)
 	result.Binds = append(fileCfg.Binds, cliCfg.Binds...)
 	result.Debug = cliCfg.Debug || fileCfg.Debug
-	result.NoOverlay = cliCfg.NoOverlay || fileCfg.NoOverlay
+	result.Overlay = cliCfg.Overlay || fileCfg.Overlay
 
 	if len(cliCfg.Command) > 0 {
 		result.Command = cliCfg.Command
@@ -282,7 +282,7 @@ Options:
   -d, --dir       Container rootfs directory / 容器 rootfs 目录
   -i, --image     Container image (name:tag or name@sha256:digest) / 容器镜像 (名称:标签 或 名称@sha256:摘要)
   -w, --workdir   Overlay work directory (default: workdirs/<name>) / overlay 工作目录 (默认: workdirs/<名称>)
-  --no-overlay    Disable overlay filesystem / 禁用 overlay 文件系统
+  --overlay       Enable overlay filesystem / 启用 overlay 文件系统
   -e, --env       Container env (KEY=VALUE) / 容器内环境变量 (可多次指定)
   -E, --envfile   Container env file path / 容器内环境变量文件路径
   -u, --user      Container run user (uid:gid) / 容器内运行用户

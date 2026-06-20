@@ -49,7 +49,7 @@ func main() {
 	id := utils.GenerateID()
 
 	var overlayDir string
-	if !cfg.NoOverlay {
+	if cfg.Overlay {
 		if localRt, ok := rt.(*runtime.LocalRuntime); ok {
 			overlayDir, err = localRt.PrepareOverlay()
 			if err != nil {

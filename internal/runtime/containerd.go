@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
@@ -65,7 +66,9 @@ func (r *ContainerdRuntime) Prepare() (string, error) {
 
 	log.ImagePulling(r.Image)
 
-	image, err := client.Pull(ctx, ref.String(), containerd.WithPullUnpack, containerd.WithPlatform("linux/amd64"))
+	// 构建本地平台字符串
+	localPlatform := fmt.Sprintf("linux/%s", runtime.GOARCH)
+	image, err := client.Pull(ctx, ref.String(), containerd.WithPullUnpack, containerd.WithPlatform(localPlatform))
 	if err != nil {
 		return "", fmt.Errorf("failed to pull image %s: %w", r.Image, err)
 	}

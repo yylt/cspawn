@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/yylt/cspawn/pkg/log"
 	"github.com/yylt/cspawn/pkg/utils"
@@ -124,9 +125,53 @@ func (r *LocalRuntime) pullAndExtract(imageRef, rootfsDir, configFile string) er
 		return fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
-	img, err := remote.Image(ref)
+	// 尝试获取 manifest list（多架构镜像）
+	desc, err := remote.Get(ref)
 	if err != nil {
-		return fmt.Errorf("failed to fetch image: %w", err)
+		return fmt.Errorf("failed to fetch image descriptor: %w", err)
+	}
+
+	var img v1.Image
+	localArch := runtime.GOARCH
+
+	// 检查是否为 manifest list（多架构索引）
+	if desc.MediaType.IsIndex() {
+		idx, err := desc.ImageIndex()
+		if err != nil {
+			return fmt.Errorf("failed to fetch image index: %w", err)
+		}
+
+		// 从 manifest list 中选择匹配本地架构的镜像
+		manifest, err := idx.IndexManifest()
+		if err != nil {
+			return fmt.Errorf("failed to fetch index manifest: %w", err)
+		}
+
+		// 查找匹配的架构
+		var matchedDigest *v1.Hash
+		for _, m := range manifest.Manifests {
+			if m.Platform != nil && m.Platform.Architecture == localArch {
+				matchedDigest = &m.Digest
+				log.Debug("Found matching architecture / 找到匹配架构: %s", localArch)
+				break
+			}
+		}
+
+		if matchedDigest == nil {
+			return fmt.Errorf("no matching architecture found for %s / 未找到匹配 %s 架构的镜像", localArch, localArch)
+		}
+
+		// 获取特定架构的镜像
+		img, err = idx.Image(*matchedDigest)
+		if err != nil {
+			return fmt.Errorf("failed to fetch image for arch %s: %w", localArch, err)
+		}
+	} else {
+		// 单架构镜像，直接使用
+		img, err = desc.Image()
+		if err != nil {
+			return fmt.Errorf("failed to fetch image: %w", err)
+		}
 	}
 
 	config, err := img.ConfigFile()
@@ -135,11 +180,6 @@ func (r *LocalRuntime) pullAndExtract(imageRef, rootfsDir, configFile string) er
 	}
 
 	log.Debug("Image config / 镜像配置: OS=%s Arch=%s", config.OS, config.Architecture)
-
-	localArch := runtime.GOARCH
-	if config.Architecture != localArch {
-		return fmt.Errorf("image architecture mismatch / 镜像架构不匹配: image=%s, local=%s", config.Architecture, localArch)
-	}
 
 	configData, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {

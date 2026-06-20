@@ -45,7 +45,7 @@ sudo cp _out/linux/amd64/cspawn /usr/local/bin/
 | `--dir` | `-d` | string | 本地 rootfs 目录路径 (与 `-i` 互斥) |
 | `--image` | `-i` | string | 容器镜像 (名称:标签 或 名称@sha256:摘要) (与 `-d` 互斥) |
 | `--workdir` | `-w` | string | Overlay 工作目录 (默认: `workdirs/<名称>`) |
-| `--no-overlay` | - | bool | 禁用 overlay 文件系统 |
+| `--overlay` | - | bool | 启用 overlay 文件系统 |
 | `--env` | `-e` | string | 环境变量 (可多次指定，格式：`KEY=VALUE`) |
 | `--envfile` | `-E` | string | 环境变量文件路径 |
 | `--user` | `-u` | string | 运行用户 (格式：`uid:gid`) |
@@ -105,7 +105,7 @@ debug: false
 
 ## Overlay 文件系统
 
-默认启用 overlay 文件系统，将 rootfs 作为只读层，所有写入在独立的可写层进行。
+默认**不使用** overlay 文件系统，直接使用 rootfs。如需使用 overlay 文件系统（将 rootfs 作为只读层，所有写入在独立的可写层进行），需要明确启用。
 
 ### 工作目录结构
 
@@ -124,18 +124,18 @@ debug: false
 | `name@sha256:digest` | `name_sha256-digest` (前12位) |
 | 自定义 rootfs | 使用目录名 |
 
-### 禁用 Overlay
+### 启用 Overlay
 
-使用 `--no-overlay` 选项时，直接使用 rootfs，不创建可写层：
+使用 `--overlay` 选项时，启用 overlay 文件系统，将 rootfs 作为只读层，所有写入在独立的可写层进行：
 
 ```bash
-cspawn --no-overlay -i debian:trixie-slim /bin/bash
+cspawn --overlay -i debian:trixie-slim /bin/bash
 ```
 
 或在配置文件中：
 
 ```yaml
-no_overlay: true
+overlay: true
 ```
 
 ## 命名空间隔离
@@ -197,13 +197,7 @@ cspawn -i debian:trixie-slim -b /host/data:/container/data /bin/bash
 cspawn -i debian:trixie-slim -b /host/config:/container/config:ro /bin/bash
 ```
 
-### 6. 禁用 Overlay
-
-```bash
-cspawn --no-overlay -i alpine:3.18 /bin/bash
-```
-
-### 7. 完整示例
+### 6. 完整示例
 
 ```bash
 cspawn \
