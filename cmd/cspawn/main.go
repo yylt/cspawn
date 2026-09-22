@@ -30,8 +30,9 @@ func main() {
 
 	if cfg.Debug {
 		fmt.Fprintf(os.Stderr, "cspawn %s (commit: %s, built: %s)\n", version, commit, buildDate)
-		fmt.Fprintf(os.Stderr, "Config: runtime=%s socket=%s datadir=%s rootfs=%s image=%s workdir=%s command=%v\n",
-			cfg.Runtime, cfg.Socket, cfg.DataDir, cfg.RootfsDir, cfg.Image, cfg.WorkDir, cfg.Command)
+		fmt.Fprintf(os.Stderr, "Config: runtime=%s socket=%s datadir=%s rootfs=%s image=%s workdir=%s pullTimeout=%s layerTimeout=%s command=%v\n",
+			cfg.Runtime, cfg.Socket, cfg.DataDir, cfg.RootfsDir, cfg.Image, cfg.WorkDir,
+			cfg.PullTimeout, cfg.LayerTimeout, cfg.Command)
 	}
 
 	rt, err := runtime.New(cfg)

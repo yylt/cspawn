@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -136,6 +137,8 @@ func (c *Container) Run() error {
 	env := c.getEnv()
 
 	log.ContainerExec(c.Command)
+
+	runtime.GC()
 
 	cmd := exec.Command(binary, c.Command[1:]...)
 	cmd.Env = env

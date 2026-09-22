@@ -10,7 +10,8 @@ type Runtime interface {
 func New(cfg *config.Config) (Runtime, error) {
 	switch cfg.Runtime {
 	case "local":
-		return NewLocalRuntime(cfg.DataDir, cfg.RootfsDir, cfg.Image, cfg.WorkDir), nil
+		return NewLocalRuntime(cfg.DataDir, cfg.RootfsDir, cfg.Image, cfg.WorkDir,
+			cfg.PullTimeout.Value(), cfg.LayerTimeout.Value()), nil
 	case "containerd":
 		return NewContainerdRuntime(cfg.Socket, cfg.Image, cfg.DataDir), nil
 	default:
