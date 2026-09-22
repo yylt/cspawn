@@ -38,7 +38,29 @@ func New(id, rootfs string, command, env []string, user, workdir string, binds [
 	}
 }
 
+// Run runs the container on a dedicated OS thread.
+//
+// Linux namespace membership is per-thread, not per-process: the mount/uts
+// namespaces created by the unshare() inside run apply only to the OS thread
+// that issued the call. If the goroutine is rescheduled onto another thread
+// before sethostname() (run does plenty of syscalls and logging in between), the
+// hostname is written into the HOST uts namespace and renames the machine. The
+// rootfs mounts and the chroot are exposed to the same hazard, and the command
+// may be forked into the host's namespaces as well. Locking the thread for the
+// whole call keeps every step on the namespace the container created. The lock
+// is released when the goroutine exits.
+//
+// 命名空间(uts/mount)属于线程而非进程：run 中的 unshare 只对调用它的线程生效。
+// 若协程在 sethostname 之前被重新调度到其它线程，主机名会写进宿主机命名空间，
+// 把宿主机主机名改成 cspawn；挂载、chroot 以及子进程所在的命名空间也同样有风险。
+// 这里锁定线程，保证全程都在已 unshare 的那条线程上执行。
 func (c *Container) Run() error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	return c.run()
+}
+
+func (c *Container) run() error {
 	log.Info("Container ID / 容器 ID: %s", c.ID)
 	log.Info("RootFS / rootfs 路径: %s", c.RootFS)
 	log.ContainerStarting(c.Command)

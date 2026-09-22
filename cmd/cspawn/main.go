@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	goruntime "runtime"
 
 	"github.com/yylt/cspawn/internal/config"
 	"github.com/yylt/cspawn/internal/container"
@@ -17,6 +18,16 @@ var (
 )
 
 func main() {
+	// cspawn is a bootstrap process: it sets up the container and hands off to
+	// the command, doing essentially no CPU-bound work. Two Ps are enough to run
+	// the GOMAXPROCS-1 runtime (sysmon, GC assist) alongside the main goroutine,
+	// and it keeps a burst of parallel cspawn launches from flooding the host.
+	//
+	// cspawn 是引导进程：只做容器搭建并交接给目标命令，几乎没有 CPU 密集工作。
+	// 2 个 P 足以让运行时(GOMAXPROCS-1 的 sysmon/GC)与主协程并行，
+	// 同时避免大量 cspawn 并发启动时打满宿主机。
+	goruntime.GOMAXPROCS(2)
+
 	cfg, err := config.Parse()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
