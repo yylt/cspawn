@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/yylt/cspawn/pkg/utils"
 	"gopkg.in/yaml.v3"
@@ -15,22 +16,70 @@ const defaultDataDir = "/var/lib/cspawn"
 
 const defaultConfigFile = "/etc/cspawn/config.yaml"
 
+// defaultPullTimeout bounds the whole image pull (all layers). The default is
+// deliberately very large: registries may serve multi-GiB layers over slow
+// links, and cspawn must not abort a pull that is still making progress. True
+// hangs are caught much sooner by defaultLayerTimeout.
+// defaultPullTimeout 限制整个镜像拉取（所有层）的耗时。默认值特意设置得很大：
+// 镜像仓库可能通过慢速链路传输数 GB 的层，只要有进展就不应中断。真正的卡死会由
+// defaultLayerTimeout 更快地发现。
+const defaultPullTimeout = 2 * time.Hour
+
+// defaultLayerTimeout aborts a pull when a single layer stops delivering data
+// for this long, turning a silent hang into an actionable error.
+// defaultLayerTimeout 在单个层超过该时长没有任何数据时中断拉取，将静默卡死转为明确报错。
+const defaultLayerTimeout = 5 * time.Minute
+
+// Duration is a time.Duration that can be parsed from YAML strings ("30m")
+// and from command-line flags ("--pull-timeout 30m").
+// Duration 是可从 YAML 字符串（"30m"）与命令行参数（"--pull-timeout 30m"）解析的时长。
+type Duration time.Duration
+
+func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return err
+	}
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q: %w", s, err)
+	}
+	*d = Duration(v)
+	return nil
+}
+
+func (d *Duration) Set(s string) error {
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(v)
+	return nil
+}
+
+func (d Duration) String() string { return time.Duration(d).String() }
+
+// Value returns the underlying time.Duration.
+func (d Duration) Value() time.Duration { return time.Duration(d) }
+
 type Config struct {
-	Runtime   string   `yaml:"runtime,omitempty"`
-	Socket    string   `yaml:"socket,omitempty"`
-	DataDir   string   `yaml:"data_dir,omitempty"`
-	RootfsDir string   `yaml:"rootfs_dir,omitempty"`
-	Image     string   `yaml:"image,omitempty"`
-	EnvFile   string   `yaml:"env_file,omitempty"`
-	Env       []string `yaml:"env,omitempty"`
-	User      string   `yaml:"user,omitempty"`
-	Chdir     string   `yaml:"chdir,omitempty"`
-	Binds     []string `yaml:"binds,omitempty"`
-	Command   []string `yaml:"command,omitempty"`
-	Debug   bool     `yaml:"debug,omitempty"`
-	WorkDir string   `yaml:"work_dir,omitempty"`
-	Overlay bool     `yaml:"overlay,omitempty"`
-	Version bool     `yaml:"-"`
+	Runtime      string   `yaml:"runtime,omitempty"`
+	Socket       string   `yaml:"socket,omitempty"`
+	DataDir      string   `yaml:"data_dir,omitempty"`
+	RootfsDir    string   `yaml:"rootfs_dir,omitempty"`
+	Image        string   `yaml:"image,omitempty"`
+	EnvFile      string   `yaml:"env_file,omitempty"`
+	Env          []string `yaml:"env,omitempty"`
+	User         string   `yaml:"user,omitempty"`
+	Chdir        string   `yaml:"chdir,omitempty"`
+	Binds        []string `yaml:"binds,omitempty"`
+	Command      []string `yaml:"command,omitempty"`
+	Debug        bool     `yaml:"debug,omitempty"`
+	WorkDir      string   `yaml:"work_dir,omitempty"`
+	Overlay      bool     `yaml:"overlay,omitempty"`
+	PullTimeout  Duration `yaml:"pull_timeout,omitempty"`
+	LayerTimeout Duration `yaml:"layer_timeout,omitempty"`
+	Version      bool     `yaml:"-"`
 }
 
 type stringSliceFlag struct {
@@ -65,6 +114,9 @@ func Parse() (*Config, error) {
 	flag.BoolVar(&cfg.Overlay, "overlay", false, "")
 	flag.BoolVar(&cfg.Version, "v", false, "")
 
+	flag.Var(&cfg.PullTimeout, "pull-timeout", "")
+	flag.Var(&cfg.LayerTimeout, "layer-timeout", "")
+
 	flag.Var(&stringSliceFlag{&cfg.Env}, "e", "")
 	flag.Var(&stringSliceFlag{&cfg.Binds}, "b", "")
 
@@ -92,6 +144,15 @@ func Parse() (*Config, error) {
 	}
 
 	cfg.Debug = cfg.Debug || os.Getenv("CSPAWN_DEBUG") == "1"
+
+	// A negative value explicitly disables the timeout; only the zero value
+	// (unset) falls back to the default. / 负值表示显式禁用超时；仅零值（未设置）回退到默认值。
+	if cfg.PullTimeout == 0 {
+		cfg.PullTimeout = Duration(defaultPullTimeout)
+	}
+	if cfg.LayerTimeout == 0 {
+		cfg.LayerTimeout = Duration(defaultLayerTimeout)
+	}
 
 	if cfg.Runtime == "" {
 		cfg.Runtime = "local://" + defaultDataDir
@@ -175,6 +236,17 @@ func mergeConfig(fileCfg, cliCfg *Config) *Config {
 	result.Binds = append(fileCfg.Binds, cliCfg.Binds...)
 	result.Debug = cliCfg.Debug || fileCfg.Debug
 	result.Overlay = cliCfg.Overlay || fileCfg.Overlay
+
+	if cliCfg.PullTimeout != 0 {
+		result.PullTimeout = cliCfg.PullTimeout
+	} else {
+		result.PullTimeout = fileCfg.PullTimeout
+	}
+	if cliCfg.LayerTimeout != 0 {
+		result.LayerTimeout = cliCfg.LayerTimeout
+	} else {
+		result.LayerTimeout = fileCfg.LayerTimeout
+	}
 
 	if len(cliCfg.Command) > 0 {
 		result.Command = cliCfg.Command
@@ -283,6 +355,8 @@ Options:
   -i, --image     Container image (name:tag or name@sha256:digest) / 容器镜像 (名称:标签 或 名称@sha256:摘要)
   -w, --workdir   Overlay work directory (default: workdirs/<name>) / overlay 工作目录 (默认: workdirs/<名称>)
   --overlay       Enable overlay filesystem / 启用 overlay 文件系统
+  --pull-timeout  Overall image pull timeout, e.g. 2h, 30m; negative disables (default: 2h) / 镜像拉取总超时；负数表示禁用 (默认: 2h)
+  --layer-timeout Stall timeout per layer, e.g. 5m; negative disables (default: 5m) / 单层无数据超时；负数表示禁用 (默认: 5m)
   -e, --env       Container env (KEY=VALUE) / 容器内环境变量 (可多次指定)
   -E, --envfile   Container env file path / 容器内环境变量文件路径
   -u, --user      Container run user (uid:gid) / 容器内运行用户
@@ -295,6 +369,8 @@ Config file format (YAML):
   runtime: local:///var/lib/cspawn
   image: golang:1.25
   work_dir: /var/lib/cspawn/workdirs/myapp
+  pull_timeout: 2h
+  layer_timeout: 5m
   env:
     - GOPATH=/go
     - GOCACHE=/root/.cache/go-build

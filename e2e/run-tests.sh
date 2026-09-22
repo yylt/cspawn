@@ -91,6 +91,16 @@ test_local() {
     echo "Test 7: Bind mount (read-only)"
     run_sudo "$CSPAWN_BIN" -r local://$DATA_DIR -d "$ROOTFS_PATH" -b /tmp/cspawn-e2e-host-data:/container/ro-data:ro /bin/cat /container/ro-data/test.txt | grep -q "bound data"
     
+    # Test 8: Container hostname must stay inside the container's UTS namespace
+    echo "Test 8: Hostname isolation"
+    local hostname_before
+    hostname_before=$(hostname)
+    run_sudo "$CSPAWN_BIN" -r local://$DATA_DIR -d "$ROOTFS_PATH" /bin/hostname | grep -q "cspawn"
+    if [ "$(hostname)" != "$hostname_before" ]; then
+        echo "Error: host hostname changed from '$hostname_before' to '$(hostname)'"
+        exit 1
+    fi
+
     echo "=== E2E Local: All tests passed ==="
 }
 

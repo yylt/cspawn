@@ -15,6 +15,21 @@ func GenerateID() string {
 	return hex.EncodeToString(bytes)
 }
 
+// HumanSize formats a byte count as a human-readable string (e.g. "1.4 GiB").
+// HumanSize 将字节数格式化为易读字符串（例如 "1.4 GiB"）。
+func HumanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
 func EnsureDir(path string) error {
 	return os.MkdirAll(path, 0755)
 }

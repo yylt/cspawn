@@ -46,6 +46,8 @@ sudo cp _out/linux/amd64/cspawn /usr/local/bin/
 | `--image` | `-i` | string | 容器镜像 (名称:标签 或 名称@sha256:摘要) (与 `-d` 互斥) |
 | `--workdir` | `-w` | string | Overlay 工作目录 (默认: `workdirs/<名称>`) |
 | `--overlay` | - | bool | 启用 overlay 文件系统 |
+| `--pull-timeout` | - | duration | 镜像拉取总超时 (默认: `2h`，负数禁用) |
+| `--layer-timeout` | - | duration | 单层无数据停滞超时 (默认: `5m`，负数禁用) |
 | `--env` | `-e` | string | 环境变量 (可多次指定，格式：`KEY=VALUE`) |
 | `--envfile` | `-E` | string | 环境变量文件路径 |
 | `--user` | `-u` | string | 运行用户 (格式：`uid:gid`) |
@@ -78,6 +80,12 @@ work_dir: /var/lib/cspawn/workdirs/myapp
 
 # 禁用 overlay
 no_overlay: false
+
+# 镜像拉取超时 (默认 2h，负数禁用)；整体拉取超过该时长会中断
+pull_timeout: 2h
+
+# 单层无数据停滞超时 (默认 5m，负数禁用)；单个层超过该时长没有数据到达会中断
+layer_timeout: 5m
 
 # 环境变量
 env:
@@ -136,6 +144,28 @@ cspawn --overlay -i debian:trixie-slim /bin/bash
 
 ```yaml
 overlay: true
+```
+
+## 镜像拉取超时
+
+cspawn 在拉取镜像时对每个层进行流式解压。对于包含超大层（例如数 GB）或仓库链路较慢的镜像，
+拉取可能耗时很久。为避免看起来"卡死"，cspawn 提供两级超时：
+
+| 配置 | 默认值 | 说明 |
+|------|--------|------|
+| `pull_timeout` / `--pull-timeout` | `2h` | 整个拉取（所有层）的总超时，超时后报错退出 |
+| `layer_timeout` / `--layer-timeout` | `5m` | 单个层在该时长内没有任何数据到达即判定为网络停滞并报错 |
+
+两点说明：
+
+- 日志会打印层数、总下载大小、每层大小与每层耗时（加 `CSPAWN_DEBUG=1` 可见），因此慢速拉取是有进展输出的，而非静默卡死。
+- 只要数据仍在传输，`layer_timeout` 不会触发；它只针对真正的停滞。
+
+如需拉取超大镜像，可调大甚至禁用超时：
+
+```bash
+cspawn --pull-timeout 2h --layer-timeout 10m -i big/image:latest /bin/sh
+cspawn --pull-timeout -1 -i big/image:latest /bin/sh   # 完全禁用总超时
 ```
 
 ## 命名空间隔离
