@@ -3,7 +3,7 @@ module github.com/yylt/cspawn
 go 1.26.6
 
 require (
-	github.com/containerd/containerd/v2 v2.4.0
+	github.com/containerd/containerd/v2 v2.4.1
 	github.com/golangci/golangci-lint/v2 v2.14.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/opencontainers/image-spec v1.1.1
